@@ -5,28 +5,39 @@ http://www.emulator101.com/introduction-to-chip-8.html
 http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 https://en.wikipedia.org/wiki/CHIP-8
 """
-from dataclasses import dataclass
+import random
+
 from typing import BinaryIO, Tuple, List
 
 import pygame
 from pygame.locals import *
 
+from scenes import *
+
 # constants
 SIZE = WIDTH, HEIGHT = 64, 32
 MODIFIER = 10
-BLACK = 0x0, 0x0, 0x0
-WHITE = 0xff, 0xff, 0xff
+BLACK = 0, 0, 0
+WHITE = 0xFF, 0xFF, 0xFF
 
 
-@dataclass
 class Chip8State:
-    v: List[int]
-    i: int
-    delay: int
-    sound: int
-    pc: int
-    sp: int
-    memory: List[int]
+    def __init__(
+        self,
+        v: List[int],
+        i: int,
+        delay: int,
+        sound: int,
+        pc: int,
+        sp: int,
+        memory: List[int],
+    ):
+        self.i = i
+        self.delay = delay
+        self.sound = sound
+        self.pc = pc
+        self.sp = sp
+        self.memory = memory
 
     def set_font(self, font_list: List[List[int]]):
         i = 0
@@ -34,7 +45,7 @@ class Chip8State:
             for byte in sprite:
                 self.memory[i] = byte
                 i += 1
-    
+
     def map_code_to_mem(self, code: bytes):
         for address in range(0x200, len(code)):
             self.memory[address] = code[address - 0x200]
@@ -43,22 +54,22 @@ class Chip8State:
 class Chip8:
 
     _font_list = [
-        [0xF0, 0x90, 0x90, 0x90, 0xF0], # 0
-        [0x20, 0x60, 0x20, 0x20, 0x70], # 1
-        [0xF0, 0x10, 0xF0, 0x80, 0xF0], # 2
-        [0xF0, 0x10, 0xF0, 0x10, 0xF0], # 3
-        [0x90, 0x90, 0xF0, 0x10, 0x10], # 4
-        [0xF0, 0x80, 0xF0, 0x10, 0xF0], # 5
-        [0xF0, 0x80, 0xF0, 0x90, 0xF0], # 6
-        [0xF0, 0x10, 0x20, 0x40, 0x40], # 7
-        [0xF0, 0x90, 0xF0, 0x90, 0xF0], # 8
-        [0xF0, 0x90, 0xF0, 0x10, 0xF0], # 9
-        [0xF0, 0x90, 0xF0, 0x90, 0x90], # a
-        [0xE0, 0x90, 0xE0, 0x90, 0xE0], # b
-        [0xF0, 0x80, 0x80, 0x80, 0xF0], # c
-        [0xE0, 0x90, 0x90, 0x90, 0xE0], # d
-        [0xF0, 0x80, 0xF0, 0x80, 0xF0], # e
-        [0xF0, 0x80, 0xF0, 0x80, 0x80], # f
+        [0xF0, 0x90, 0x90, 0x90, 0xF0],  # 0
+        [0x20, 0x60, 0x20, 0x20, 0x70],  # 1
+        [0xF0, 0x10, 0xF0, 0x80, 0xF0],  # 2
+        [0xF0, 0x10, 0xF0, 0x10, 0xF0],  # 3
+        [0x90, 0x90, 0xF0, 0x10, 0x10],  # 4
+        [0xF0, 0x80, 0xF0, 0x10, 0xF0],  # 5
+        [0xF0, 0x80, 0xF0, 0x90, 0xF0],  # 6
+        [0xF0, 0x10, 0x20, 0x40, 0x40],  # 7
+        [0xF0, 0x90, 0xF0, 0x90, 0xF0],  # 8
+        [0xF0, 0x90, 0xF0, 0x10, 0xF0],  # 9
+        [0xF0, 0x90, 0xF0, 0x90, 0x90],  # a
+        [0xE0, 0x90, 0xE0, 0x90, 0xE0],  # b
+        [0xF0, 0x80, 0x80, 0x80, 0xF0],  # c
+        [0xE0, 0x90, 0x90, 0x90, 0xE0],  # d
+        [0xF0, 0x80, 0xF0, 0x80, 0xF0],  # e
+        [0xF0, 0x80, 0xF0, 0x80, 0x80],  # f
     ]
 
     def __init__(self, chip_file: BinaryIO):
@@ -76,8 +87,13 @@ class Chip8:
         """
         self.chip_file = chip_file.read()
         self.chip_state = Chip8State(
-            v=[0 for _ in range(16)], i=0, delay=0, sound=0,
-            pc=0x200, sp=0xEA0, memory=[0 for _ in range(4096)]
+            v=[0 for _ in range(16)],
+            i=0,
+            delay=0,
+            sound=0,
+            pc=0x200,
+            sp=0xEA0,
+            memory=[0 for _ in range(4096)],
         )
         self.chip_state.set_font(self._font_list)
         self.chip_state.map_code_to_mem(self.chip_file)
@@ -180,31 +196,56 @@ class Chip8:
         print(f"{pc+0x200:04x} {code_first:02x} {code_second:02x} ", end="")
         self.opcode_switch(first_nibble, code)
 
+
+def graphic_grid(size: Tuple[int], modifier: int) -> List[Tuple[int]]:
+    grid = []
+    for i in range(64):
+        for j in range(32):
+            grid.append((i * modifier, j * modifier, modifier, modifier))
+    return grid
+
+
+
 def main(chip_program: str):
     with open(chip_program, "rb") as chip_file:
         chip8 = Chip8(chip_file)
+        grid_rect = graphic_grid(SIZE, MODIFIER)
 
+        # initialize screen
         pygame.init()
-        screen = pygame.display.set_mode(SIZE)
+        screen = pygame.display.set_mode((WIDTH * MODIFIER, HEIGHT * MODIFIER))
         pygame.display.set_caption("Chip8 Interpreter")
         pygame.mouse.set_visible(0)
-        background = pygame.Surface(screen.get_size()).convert()
-        
-        # Boot Screen xd
-        font = pygame.font.Font(None, 24)
-        text = font.render("Chip 8 Interpreter\nby Vatsal Parekh", 1, (0x0a, 0x0a, 0x0a))
-        textpos = text.get_rect(centerx=background.get_width()/2)
-        background.blit(text, textpos)
-        screen.blit(background, (0, 0))
-        pygame.display.flip()
+        background = pygame.Surface(screen.get_size())
+        background = background.convert()
+        clock = pygame.time.Clock()
+        font = pygame.font.SysFont("monospace", 18)
 
+        # Title screen
+        active_scene = TitleScreen()
+        active_scene.render(screen, background, font, clock)
 
+        # Change to boot screen
+        active_scene.switch_scene(BootScreen())
 
-    
+        # Event loop
+        while True:
+            clock.tick(60)
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    return
+            # bit of fun
+            for rect in grid_rect:
+                color = random.randint(0, 255), random.randint(0, 255),random.randint(0, 255) 
+                pygame.draw.rect(background, color, rect, 0)
+
+            screen.blit(background, (0, 0))
+            pygame.display.flip()
 
 
 if __name__ == "__main__":
     from sys import argv
+
     if len(argv) == 2:
         main(argv[1])
     else:
