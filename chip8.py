@@ -15,6 +15,24 @@ SIZE = WIDTH, HEIGHT = 64, 32
 MODIFIER = 10
 BLACK = 0, 0, 0
 WHITE = 0xFF, 0xFF, 0xFF
+KEYS = {
+    pygame.K_0: 0x0,
+    pygame.K_1: 0x1,
+    pygame.K_2: 0x2,
+    pygame.K_3: 0x3,
+    pygame.K_4: 0x4,
+    pygame.K_5: 0x5,
+    pygame.K_6: 0x6,
+    pygame.K_7: 0x7,
+    pygame.K_8: 0x8,
+    pygame.K_9: 0x9,
+    pygame.K_a: 0xa,
+    pygame.K_b: 0xb,
+    pygame.K_c: 0xc,
+    pygame.K_d: 0xd,
+    pygame.K_e: 0xe,
+    pygame.K_f: 0xf
+}
 
 
 class Chip8State:
@@ -46,6 +64,21 @@ class Chip8State:
     def map_code_to_mem(self, code: bytes):
         for address in range(0x200, len(code)):
             self.memory[address] = code[address - 0x200]
+
+def wait():
+    """ Waiting for User to press key
+    """
+    while True:
+        pressed_keys = pygame.key.get_pressed()
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                import sys; sys.exit()
+            if event.type == pygame.KEYDOWN and \
+                any(
+                    True if pressed_keys[x] else False for x in filter(lambda i: i in KEYS, pressed_keys)
+                ):
+                return next(filter(lambda i: i in KEYS and pressed_keys[i], pressed_keys))
 
 
 class Chip8:
@@ -95,35 +128,40 @@ class Chip8:
         self.chip_state.set_font(self._font_list)
         self.chip_state.map_code_to_mem(self.chip_file)
 
-    def opcode_switch(self, type_of: int, code: Tuple[bytes]):
-        if type_of == 0:
-            second_nibble = code[0] & 0xF
-            if second_nibble == 0xE:
-                if code[1] & 0xF == 0x0:
-                    print("CLS")
-                else:
-                    print("RET")
-            else:
-                print(f"SYS {code[0] & 0xf}{code[1]}")
+    def opcode_switch(self, type_of: int, code: Tuple[bytes], pressed_keys):
+        if type_of == 0x0:
+            # 0nnn is not implemented
+
+            sub_type_of = (code[0] & 0xf) << 8 | code[1]
+            if sub_type_of == 0x0E0:
+                print("CLS")
+            elif sub_type_of == 0x0EE:
+                addr = self.chip_state.memory[self.chip_state.sp]
+                self.chip_state.sp -= 1
 
         # jump suppresses error condition if addr lesser
         # than 0x200
         elif type_of == 0x1:
-            addr = (code[0] & 0xf) >> 0xff + code[1]
+            addr = (code[0] & 0xf) << 8 | code[1]
             self.chip_state.pc = addr if addr >= 0x200 else self.chip_state.pc
 
         elif type_of == 0x2:
-            addr = (code[0] & 0xf) >> 0xff + code[1]
+            addr = (code[0] & 0xf) << 8 | code[1]
             self.chip_state.sp += 1
             self.chip_state.memory[self.chip_state.sp] = self.chip_state.pc
             self.chip_state.pc = addr
 
         elif type_of == 0x3:
-            print(f"SE V{code[0] & 0xf}, {code[1]}")
+            if self.chip_state.v[code[0] & 0xf] == code[1]:
+                self.chip_state.pc += 2
+
         elif type_of == 0x4:
-            print(f"SNE V{code[0] & 0xf}, {code[1]}")
+            if self.chip_state.v[code[0] & 0xf] != code[1]:
+                self.chip_state.pc += 2
+
         elif type_of == 0x5:
-            print(f"SE V{code[0] & 0xf}, V{code[1] >> 4}")
+            if self.chip_state.v[code[0] & 0xf] == self.chip_state.v[code[1] >> 4]:
+                self.chip_state.pc += 2
 
         elif type_of == 0x6:
             self.chip_state.v[code[0] & 0xf] = code[1]
@@ -185,12 +223,14 @@ class Chip8:
                 self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4] << 1
 
         elif type_of == 0x9:
-            print(f"SNE V{code[0] & 0xf}, V{code[1] >> 4}")
+            if self.chip_state.v[code[0] & 0xf] != self.chip_state.v[code[1] >> 4]:
+                self.chip_state.pc += 2
+
         elif type_of == 0xA:
             print(f"LD I, {code[0] & 0xf}{code[1]}")
 
         elif type_of == 0xB:
-            addr = ((code[0] & 0xf) >> 0xff + code[1]) + self.chip_state.v[0]
+            addr = ((code[0] & 0xf) << 8 | code[1]) + self.chip_state.v[0]
             self.chip_state.pc = addr if addr >= 0x200 else self.chip_state.pc
 
         elif type_of == 0xC:
@@ -205,15 +245,17 @@ class Chip8:
                 print(f"SKP V{code[0] & 0xf}")
             elif code[1] == 0xA1:
                 print(f"SKNP V{code[0] & 0xf}")
+
         elif type_of == 0xF:
             if code[1] == 0x07:
-                print(f"LD V{code[0] & 0xf}, DT")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.delay
             elif code[1] == 0x0A:
-                print(f"LD V{code[0] & 0xf}, K")
+                key = wait()
+                self.chip_state.v[code[0] & 0xf] = KEYS[key]
             elif code[1] == 0x15:
-                print(f"LD DT, V{code[0] & 0xf}")
+                self.chip_state.delay = self.chip_state.v[code[0] & 0xf]
             elif code[1] == 0x18:
-                print(f"LD ST, V{code[0] & 0xf}")
+                self.chip_state.sound = self.chip_state.v[code[0] & 0xf]
             elif code[1] == 0x1E:
                 print(f"ADD I, V{code[0] & 0xf}")
             elif code[1] == 0x29:
@@ -225,15 +267,18 @@ class Chip8:
             elif code[1] == 0x65:
                 print(f"LD V{code[0] & 0xf}, [I]")
 
-    def opcode(self, pc: int):
-        code = code_first, code_second = (
-            self.chip_state.memory[pc],
-            self.chip_state.memory[pc + 1],
+    def fetch_next_opcode(self, pressed_keys):
+        code = code_first, _ = (
+            self.chip_state.memory[self.chip_state.pc],
+            self.chip_state.memory[self.chip_state.pc + 1],
         )
+        self.chip_state.pc += 2
         # extract first nibble from code
         first_nibble = code_first >> 4
-        print(f"{pc+0x200:04x} {code_first:02x} {code_second:02x} ", end="")
-        self.opcode_switch(first_nibble, code)
+        self.opcode_switch(first_nibble, code, pressed_keys)
+        # reduce timers if set
+        if self.chip_state.delay > 0: self.chip_state.delay -= 1
+        if self.chip_state.sound > 0: self.chip_state.sound -= 1
 
 
 def graphic_grid(size: Tuple[int], modifier: int) -> List[Tuple[int]]:

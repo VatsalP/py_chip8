@@ -15,7 +15,7 @@ class SceneBase:
         self.next = self
 
     def process_input(self, events, pressed_keys):
-        pass
+        self.pressed_keys = pressed_keys
 
     def update(self):
         pass
@@ -53,9 +53,6 @@ class TitleScene(SceneBase):
         exit_time = current_time + 1.5 * 10 ** 3
         boot_screen = True
         while boot_screen:
-            for event in pygame.event.get():
-                if event.type == QUIT:
-                    return
             current_time = pygame.time.get_ticks()
             if current_time >= exit_time:
                 boot_screen = False
