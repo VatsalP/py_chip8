@@ -23,7 +23,7 @@ class SceneBase:
     def render(self, surface: pygame.Surface):
         pass
 
-    def switch_scene(self, next_scene: 'SceneBase'):
+    def switch_scene(self, next_scene: "SceneBase"):
         self.next = next_scene
 
     def terminate(self):
@@ -50,37 +50,27 @@ class TitleScene(SceneBase):
         screen.blit(background, (0, 0))
         pygame.display.flip()
         current_time = pygame.time.get_ticks()
-        exit_time = current_time + 1.5 * 10 ** 3
+        exit_time = current_time + 1 * 10 ** 3
         boot_screen = True
         while boot_screen:
             current_time = pygame.time.get_ticks()
             if current_time >= exit_time:
                 boot_screen = False
             clock.tick(5)
-        background.fill(chip8.BLACK)
-        screen.blit(background, (0, 0))
-        pygame.display.flip()
 
 
 class BootScene(SceneBase):
     def __init__(self, time: int, chip8: chip8.Chip8):
         SceneBase.__init__(self)
         # we do this scene for 2 secs
-        self.exit_time = time + 3 * 10 ** 3
+        self.exit_time = time + 1 * 10 ** 3
         self.chip8 = chip8
 
-    def render(
-        self,
-        background: pygame.Surface,
-        grid_rect: List[Tuple[int]],
-        *args
-    ):
+    def render(self, background: pygame.Surface, grid_rect: List[Tuple[int]], *args):
         # bit of fun eh
         for rect in grid_rect:
             color = randint(0, 10), randint(0, 10), randint(0, 102)
             pygame.draw.rect(background, color, rect, 0)
-        if not args[0].get_bold():
-            args[0].set_bold(True)
         text = args[0].render("Loading...", 1, chip8.WHITE)
         textpos = text.get_rect(
             centery=background.get_height() / 2, centerx=background.get_width() / 2
@@ -88,7 +78,7 @@ class BootScene(SceneBase):
         background.blit(text, textpos)
         curr_time = pygame.time.get_ticks()
         if curr_time >= self.exit_time:
-            args[0].set_bold(False)
+            background.fill(chip8.BLACK)
             self.switch_scene(Chip8Scene(self.chip8))
 
 
@@ -97,6 +87,13 @@ class Chip8Scene(SceneBase):
         SceneBase.__init__(self)
         self.chip8 = chip8
 
-    def render(self, background: pygame.Surface, *args):
-        background.fill(chip8.BLACK)
+    def update(self):
+        self.chip8.fetch_next_opcode(self.pressed_keys)
 
+    def render(self, background: pygame.Surface, grid_rect: List[Tuple[int]], *args):
+        display = self.chip8.get_display()
+        for i, pixel in enumerate(display):
+            if pixel:
+                pygame.draw.rect(background, chip8.WHITE, grid_rect[i], 0)
+            else:
+                pygame.draw.rect(background, chip8.BLACK, grid_rect[i], 0)
