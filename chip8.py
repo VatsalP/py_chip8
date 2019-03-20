@@ -1,9 +1,5 @@
 """
 Chip 8 interpreter
-Reference:
-http://www.emulator101.com/introduction-to-chip-8.html
-http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
-https://en.wikipedia.org/wiki/CHIP-8
 """
 import random
 
@@ -12,7 +8,7 @@ from typing import BinaryIO, Tuple, List
 import pygame
 from pygame.locals import *
 
-from scenes import *
+import scenes
 
 # constants
 SIZE = WIDTH, HEIGHT = 64, 32
@@ -32,6 +28,7 @@ class Chip8State:
         sp: int,
         memory: List[int],
     ):
+        self.v = v
         self.i = i
         self.delay = delay
         self.sound = sound
@@ -98,18 +95,6 @@ class Chip8:
         self.chip_state.set_font(self._font_list)
         self.chip_state.map_code_to_mem(self.chip_file)
 
-    def disassemble(self):
-        """Used to disassemble the read chip 8 file
-
-        According references Chip 8 has 36 different instructions i.e. opcodes
-        
-        All opcodes are 2 bytes long and are stored in network byte order/big endian/most significant byte first xd 
-        ie. if first two bytes in program are 6a 02 then 6a is most significant byte followed by 02
-        """
-        for i in range(0, len(self.chip_file), 2):
-            # increment of 2 since each opcode is 2 byte long
-            self.opcode(i)
-
     def opcode_switch(self, type_of: int, code: Tuple[bytes]):
         if type_of == 0:
             second_nibble = code[0] & 0xF
@@ -120,48 +105,99 @@ class Chip8:
                     print("RET")
             else:
                 print(f"SYS {code[0] & 0xf}{code[1]}")
+
+        # jump suppresses error condition if addr lesser
+        # than 0x200
         elif type_of == 0x1:
-            print(f"JP {code[0] & 0xf}{code[1]}")
+            addr = (code[0] & 0xf) >> 0xff + code[1]
+            self.chip_state.pc = addr if addr >= 0x200 else self.chip_state.pc
+
         elif type_of == 0x2:
-            print(f"CALL {code[0] & 0xf}{code[1]}")
+            addr = (code[0] & 0xf) >> 0xff + code[1]
+            self.chip_state.sp += 1
+            self.chip_state.memory[self.chip_state.sp] = self.chip_state.pc
+            self.chip_state.pc = addr
+
         elif type_of == 0x3:
             print(f"SE V{code[0] & 0xf}, {code[1]}")
         elif type_of == 0x4:
             print(f"SNE V{code[0] & 0xf}, {code[1]}")
         elif type_of == 0x5:
             print(f"SE V{code[0] & 0xf}, V{code[1] >> 4}")
+
         elif type_of == 0x6:
-            print(f"LD V{code[0] & 0xf}, {code[1]}")
+            self.chip_state.v[code[0] & 0xf] = code[1]
+
         elif type_of == 0x7:
-            print(f"ADD V{code[0] & 0xf}, {code[1]}")
+            self.chip_state.v[code[0] & 0xf] += code[1]
+            self.chip_state.v[code[0] & 0xf] %= 256
+
         elif type_of == 0x8:
-            last_nibble = code[1] & 0xF
+            last_nibble = code[1] & 0xf
             if last_nibble == 0x0:
-                print(f"LD V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4]
+
             elif last_nibble == 0x1:
-                print(f"OR V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[0] | 0xf] & \
+                    self.chip_state.v[code[1] >> 4]
+            
             elif last_nibble == 0x2:
-                print(f"AND V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[0] & 0xf] & \
+                    self.chip_state.v[code[1] >> 4]
+
             elif last_nibble == 0x3:
-                print(f"XOR V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[0] ^ 0xf] & \
+                    self.chip_state.v[code[1] >> 4]
+
             elif last_nibble == 0x4:
-                print(f"ADD V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] += self.chip_state.v[code[1] >> 4]
+                if self.chip_state.v[code[0] & 0xf] > 255:
+                    self.chip_state.v[0xf] = 0x1
+                    self.chip_state.v[code[0] & 0xf] %= 256
+                else:
+                    self.chip_state.v[0xf] = 0x0
+                
             elif last_nibble == 0x5:
-                print(f"SUB V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] -= self.chip_state.v[code[0] >> 4]
+                if self.chip_state.v[code[0] & 0xf] < 0:
+                    self.chip_state.v[0xf] = 0x1
+                    self.chip_state.v[code[0] & 0xf] += 256
+                else:
+                    self.chip_state.v[0xf] = 0x0
+
+            # check if working
             elif last_nibble == 0x6:
-                print(f"SHR V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[0xf] = self.chip_state.v[code[1] >> 4] & 0x1
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4] >> 1
+
             elif last_nibble == 0x7:
-                print(f"SUBN V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[0] >> 4] - \
+                    self.chip_state.v[code[0] & 0xf]
+                if self.chip_state.v[code[0] & 0xf] < 0:
+                    self.chip_state.v[0xf] = 0x1
+                    self.chip_state.v[code[0] & 0xf] += 256
+                else:
+                    self.chip_state.v[0xf] = 0x0
+
+            # check if working
             elif last_nibble == 0xE:
-                print(f"SHL V{code[0] & 0xf}, V{code[1] >> 4}")
+                self.chip_state.v[0xf] = self.chip_state.v[code[1] >> 4] >> 7
+                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4] << 1
+
         elif type_of == 0x9:
             print(f"SNE V{code[0] & 0xf}, V{code[1] >> 4}")
         elif type_of == 0xA:
             print(f"LD I, {code[0] & 0xf}{code[1]}")
+
         elif type_of == 0xB:
-            print(f"JP V0, {code[0] & 0xf}{code[1]}")
+            addr = ((code[0] & 0xf) >> 0xff + code[1]) + self.chip_state.v[0]
+            self.chip_state.pc = addr if addr >= 0x200 else self.chip_state.pc
+
         elif type_of == 0xC:
-            print(f"RND V{code[0] & 0xf}, {code[1]}")
+            mask = code[1]
+            random_num = random.randint(0, 255) & mask
+            self.chip_state.v[code[0] & 0xf] = random_num
+
         elif type_of == 0xD:
             print(f"DRW V{code[0] & 0xf}, V{code[1] >> 4}, {code[1] & 0xf}")
         elif type_of == 0xE:
@@ -190,7 +226,10 @@ class Chip8:
                 print(f"LD V{code[0] & 0xf}, [I]")
 
     def opcode(self, pc: int):
-        code = code_first, code_second = self.chip_file[pc], self.chip_file[pc + 1]
+        code = code_first, code_second = (
+            self.chip_state.memory[pc],
+            self.chip_state.memory[pc + 1],
+        )
         # extract first nibble from code
         first_nibble = code_first >> 4
         print(f"{pc+0x200:04x} {code_first:02x} {code_second:02x} ", end="")
@@ -203,7 +242,6 @@ def graphic_grid(size: Tuple[int], modifier: int) -> List[Tuple[int]]:
         for j in range(32):
             grid.append((i * modifier, j * modifier, modifier, modifier))
     return grid
-
 
 
 def main(chip_program: str):
@@ -219,28 +257,37 @@ def main(chip_program: str):
         background = pygame.Surface(screen.get_size())
         background = background.convert()
         clock = pygame.time.Clock()
-        font = pygame.font.SysFont("monospace", 18)
+        font = pygame.font.SysFont("monospace", 24)
 
         # Title screen
-        active_scene = TitleScreen()
+        active_scene = scenes.TitleScene()
         active_scene.render(screen, background, font, clock)
 
         # Change to boot screen
-        active_scene.switch_scene(BootScreen())
+        active_scene.switch_scene(scenes.BootScene(pygame.time.get_ticks(), chip8))
+        active_scene = active_scene.next
 
         # Event loop
-        while True:
-            clock.tick(60)
+        while active_scene != None:
+            pressed_keys = pygame.key.get_pressed()
+            filtered_events = []
             for event in pygame.event.get():
-                if event.type == QUIT:
-                    return
-            # bit of fun
-            for rect in grid_rect:
-                color = random.randint(0, 255), random.randint(0, 255),random.randint(0, 255) 
-                pygame.draw.rect(background, color, rect, 0)
+                quit_attempt = False
+                if event.type == pygame.QUIT:
+                    quit_attempt = True
+                if quit_attempt:
+                    active_scene.terminate()
+                else:
+                    filtered_events.append(event)
+
+            active_scene.process_input(filtered_events, pressed_keys)
+            active_scene.update()
+            active_scene.render(background, grid_rect, font, clock)
+            active_scene = active_scene.next
 
             screen.blit(background, (0, 0))
             pygame.display.flip()
+            clock.tick(60)
 
 
 if __name__ == "__main__":

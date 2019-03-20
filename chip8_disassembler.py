@@ -1,9 +1,5 @@
 """
 Disassembler for Chip 8 programs
-Reference:
-http://www.emulator101.com/introduction-to-chip-8.html
-http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
-https://en.wikipedia.org/wiki/CHIP-8
 """
 from typing import BinaryIO, Tuple
 
