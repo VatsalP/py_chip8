@@ -68,9 +68,10 @@ class BootScene(SceneBase):
 
     def render(self, background: pygame.Surface, grid_rect: List[Tuple[int]], *args):
         # bit of fun eh
-        for rect in grid_rect:
-            color = randint(0, 10), randint(0, 10), randint(0, 102)
-            pygame.draw.rect(background, color, rect, 0)
+        for y in range(32):
+            for x in range(64):
+                color = randint(0, 10), randint(0, 10), randint(0, 102)
+                pygame.draw.rect(background, color, grid_rect[y][x], 0)
         text = args[0].render("Loading...", 1, chip8.WHITE)
         textpos = text.get_rect(
             centery=background.get_height() / 2, centerx=background.get_width() / 2
@@ -92,8 +93,9 @@ class Chip8Scene(SceneBase):
 
     def render(self, background: pygame.Surface, grid_rect: List[Tuple[int]], *args):
         display = self.chip8.get_display()
-        for i, pixel in enumerate(display):
-            if pixel:
-                pygame.draw.rect(background, chip8.WHITE, grid_rect[i], 0)
-            else:
-                pygame.draw.rect(background, chip8.BLACK, grid_rect[i], 0)
+        for y in range(32):
+            for x in range(64):
+                if display[y][x]:
+                    pygame.draw.rect(background, chip8.WHITE, grid_rect[y][x], 0)
+                else:
+                    pygame.draw.rect(background, chip8.BLACK, grid_rect[y][x], 0)

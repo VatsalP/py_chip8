@@ -3,6 +3,7 @@ Chip 8 interpreter
 """
 import random
 
+from copy import deepcopy
 from typing import BinaryIO, Tuple, List
 
 import pygame
@@ -46,7 +47,6 @@ class Chip8State:
         pc: int,
         sp: int,
         memory: List[int],
-        display: List[List[int]]
     ):
         self.v = v
         self.i = i
@@ -55,7 +55,6 @@ class Chip8State:
         self.pc = pc
         self.sp = sp
         self.memory = memory
-        self.display = display
 
     def set_font(self, font_list: List[List[int]]):
         i = 0
@@ -119,6 +118,8 @@ class Chip8:
         256*8 == 64*32 == 2048 bits
         """
         self.chip_file = chip_file.read()
+        cp  = [0 for _ in range(64)]
+        self.display = [deepcopy(cp) for _ in range(32)]
         self.chip_state = Chip8State(
             v=[0 for _ in range(16)],
             i=0,
@@ -127,7 +128,6 @@ class Chip8:
             pc=0x200,
             sp=0xEA0,
             memory=[0 for _ in range(4096)],
-            display=[0 for _ in range(64*32)]
         )
         self.chip_state.set_font(self._font_list)
         self.chip_state.map_code_to_mem(self.chip_file, len(self.chip_file))
@@ -139,8 +139,9 @@ class Chip8:
             sub_type_of = (code[0] & 0xf) << 8 | code[1]
             if sub_type_of == 0x0e0:
                 # cls
-                for i, _ in enumerate(self.chip_state.display):
-                    self.chip_state.display[i] = 0
+                for y in range(32):
+                    for x in range(64):
+                        self.display[y][x] = 0
             elif sub_type_of == 0x0ee:
                 # ret 
                 self.chip_state.sp -= 1
@@ -276,22 +277,22 @@ class Chip8:
             vx, vy = self.chip_state.v[code[0] &  0xf], self.chip_state.v[code[1] >> 4]
             n = code[1] & 0xf
             unset = False
-            import ipdb; ipdb.set_trace()
             for y in range(n):
                 sprite_byte =self.chip_state.memory[
                     self.chip_state.i + y
                 ]
                 # doubt
                 for x in range(8):
-                    addr = ((vy+y) * 64) + vx + x
+                    # addr = ((vy+y) * 64) + vx + x
                     if (vy+y) >= 32 or (vx + x) >= 64:
                         # out of screen
                         continue
                     new_byte = (sprite_byte & (1<<(8-x-1))) >> (8-x-1)
-                    old_byte = self.chip_state.display[addr]
+                    old_byte = self.display[vy+y][vx+x]
                     if old_byte and not (old_byte ^ new_byte):
                         unset = True
-                    self.chip_state.display[addr] = new_byte ^ old_byte
+                    self.display[vy+y][vx+x] = new_byte ^ old_byte
+            self.chip_state.v[0xf] = 1 if unset else 0
 
         elif type_of == 0xE:
             # skips related to key pressed
@@ -355,14 +356,15 @@ class Chip8:
         return self.chip_state.memory
 
     def get_display(self):
-        return self.chip_state.display
+        return self.display
 
 
 def graphic_grid(size: Tuple[int], modifier: int) -> List[Tuple[int]]:
     grid = []
-    for i in range(64):
-        for j in range(32):
-            grid.append((i * modifier, j * modifier, modifier, modifier))
+    for j in range(32):
+        grid.append([])
+        for i in range(64):
+            grid[j].append((i * modifier, j * modifier, modifier, modifier))
     return grid
 
 
@@ -385,7 +387,7 @@ def main(chip_program: str):
         active_scene.render(screen, background, font, clock)
 
         # startup chip8
-        chip8 = `Chip8`(chip_file)
+        chip8 = Chip8(chip_file)
 
         # Change to boot screen
         active_scene.switch_scene(scenes.BootScene(pygame.time.get_ticks(), chip8))
