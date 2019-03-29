@@ -1,71 +1,6 @@
-"""
-Chip 8 interpreter
-"""
-import random
-
-from copy import deepcopy
-from typing import BinaryIO, Tuple, List
-
 import pygame
 from pygame.locals import *
 
-import scenes
-
-# constants
-SIZE = WIDTH, HEIGHT = 64, 32
-MODIFIER = 10
-BLACK = 0, 0, 0
-WHITE = 0xFF, 0xFF, 0xFF
-KEYS = {
-    pygame.K_0: 0x0,
-    pygame.K_1: 0x1,
-    pygame.K_2: 0x2,
-    pygame.K_3: 0x3,
-    pygame.K_4: 0x4,
-    pygame.K_5: 0x5,
-    pygame.K_6: 0x6,
-    pygame.K_7: 0x7,
-    pygame.K_8: 0x8,
-    pygame.K_9: 0x9,
-    pygame.K_a: 0xa,
-    pygame.K_b: 0xb,
-    pygame.K_c: 0xc,
-    pygame.K_d: 0xd,
-    pygame.K_e: 0xe,
-    pygame.K_f: 0xf
-}
-KEYS_REVERSED = {v: k for k, v in KEYS.items()}
-
-
-class Chip8State:
-    def __init__(
-        self,
-        v: List[int],
-        i: int,
-        delay: int,
-        sound: int,
-        pc: int,
-        sp: int,
-        memory: List[int],
-    ):
-        self.v = v
-        self.i = i
-        self.delay = delay
-        self.sound = sound
-        self.pc = pc
-        self.sp = sp
-        self.memory = memory
-
-    def set_font(self, font_list: List[List[int]]):
-        i = 0
-        for sprite in font_list:
-            for byte in sprite:
-                self.memory[i] = byte
-                i += 1
-
-    def map_code_to_mem(self, code: bytes, code_len: int):
-        for address in range(0x200, code_len+0x200):
-            self.memory[address] = code[address - 0x200]
 
 def wait():
     """ Waiting for User to press key
@@ -85,7 +20,27 @@ def wait():
 
 class Chip8:
 
-    _font_list = [
+    KEYS = {
+        pygame.K_1: 0x0,
+        pygame.K_2: 0x1,
+        pygame.K_3: 0x2,
+        pygame.K_4: 0x3,
+        pygame.K_q: 0x4,
+        pygame.K_w: 0x5,
+        pygame.K_e: 0x6,
+        pygame.K_r: 0x7,
+        pygame.K_a: 0x8,
+        pygame.K_s: 0x9,
+        pygame.K_d: 0xa,
+        pygame.K_f: 0xb,
+        pygame.K_z: 0xc,
+        pygame.K_x: 0xd,
+        pygame.K_c: 0xe,
+        pygame.K_v: 0xf
+    }
+    KEYS.update({v: k for k, v in KEYS.items()})
+
+    font_list = [
         [0xF0, 0x90, 0x90, 0x90, 0xF0],  # 0
         [0x20, 0x60, 0x20, 0x20, 0x70],  # 1
         [0xF0, 0x10, 0xF0, 0x80, 0xF0],  # 2
@@ -104,7 +59,8 @@ class Chip8:
         [0xF0, 0x80, 0xF0, 0x80, 0x80],  # f
     ]
 
-    def __init__(self, chip_file: BinaryIO):
+
+    def __init__(self, chip_file):
         """Chip8 interpreter
 
         Chip file is BinaryIO stream of chip program
@@ -118,308 +74,214 @@ class Chip8:
         256*8 == 64*32 == 2048 bits
         """
         self.chip_file = chip_file.read()
-        cp  = [0 for _ in range(64)]
-        self.display = [deepcopy(cp) for _ in range(32)]
-        self.chip_state = Chip8State(
-            v=[0 for _ in range(16)],
-            i=0,
-            delay=0,
-            sound=0,
-            pc=0x200,
-            sp=0xEA0,
-            memory=[0 for _ in range(4096)],
-        )
-        self.chip_state.set_font(self._font_list)
-        self.chip_state.map_code_to_mem(self.chip_file, len(self.chip_file))
+        self.state = {
+            'v': [0 for _ in range(16)],
+            'i': 0,
+            "delay": 0,
+            "sound": 0,
+            "pc": 0x200,
+            "sp": 0xEA0,
+            "memory": [0 for _ in range(4096)],
+            "display": [[0 for _ in range(64)] for _ in range(32)]
+        }
+        self.opcode_map = {
+            0x0: {0x0: self._00E0, 0xE: self._00EE},
+            0x1: self._1NNN,
+            0x2: self._2NNN,
+            0x3: self._3XNN,
+            0x4: self._4XNN,
+            0x5: self._5XY0,
+            0x6: self._6XNN,
+            0x7: self._7XNN,
+            0x8: {
+                0x0: self._8XY0,
+                0x1: self._8XY1,
+                0x2: self._8XY2,
+                0x3: self._8XY3,
+                0x4: self._8XY4,
+                0x5: self._8XY5,
+                0x6: self._8XY6,
+                0x7: self._8XY7,
+                0xE: self._8XYE,
+            },
+            0x9: self._9XY0,
+            0xA: self._ANNN,
+            0xB: self._BNNN,
+            0xC: self._CXNN,
+            0xD: self._DXYN,
+            0xE: {0xE: self._EX9E, 0X1: self._EXA1},
+            0xF: {
+                0x07: self._FX07,
+                0x0A: self._FX0A,
+                0x15: self._FX15,
+                0x18: self._FX18,
+                0x1E: self._FX1E,
+                0x29: self._FX29,
+                0x33: self._FX33,
+                0x55: self._FX55,
+                0x65: self._FX65,
+            }
+        }
+        self.set_font(self.font_list)
+        self.map_code_to_mem(self.chip_file, len(self.chip_file))
 
-    def opcode_switch(self, type_of: int, code: Tuple[bytes], pressed_keys):
-        if type_of == 0x0:
-            # 0nnn is not implemented
+    def set_font(self, font_list):
+        i = 0
+        for sprite in font_list:
+            for byte in sprite:
+                self.state["memory"][i] = byte
+                i += 1
 
-            sub_type_of = (code[0] & 0xf) << 8 | code[1]
-            if sub_type_of == 0x0e0:
-                # cls
-                for y in range(32):
-                    for x in range(64):
-                        self.display[y][x] = 0
-            elif sub_type_of == 0x0ee:
-                # ret 
-                self.chip_state.sp -= 1
-                self.chip_state.pc = self.chip_state.memory[self.chip_state.sp] << 8
-                self.chip_state.sp -= 1
-                self.chip_state.pc = self.chip_state.memory[self.chip_state.sp]
+    def map_code_to_mem(self, code, code_len):
+        for address in range(0x200, code_len+0x200):
+            self.state["memory"][address] = code[address - 0x200]
 
-        elif type_of == 0x1:
-            # jump to address jmp nnn
-            addr = (code[0] & 0xf) << 8 | code[1]
-            self.chip_state.pc = addr
-
-        elif type_of == 0x2:
-            # stack thing
-            # call nnn
-            addr = (code[0] & 0xf) << 8 | code[1]
-            self.chip_state.memory[self.chip_state.sp] = self.chip_state.pc & 0x00ff
-            self.chip_state.sp += 1
-            self.chip_state.memory[self.chip_state.sp] = (self.chip_state.pc & 0x00ff) >> 8
-            self.chip_state.sp += 1
-            self.chip_state.pc = addr
-
-        elif type_of == 0x3:
-            # ske vx, nn
-            if self.chip_state.v[code[0] & 0xf] == code[1]:
-                self.chip_state.pc += 2
-
-        elif type_of == 0x4:
-            # skne vx, nn
-            if self.chip_state.v[code[0] & 0xf] != code[1]:
-                self.chip_state.pc += 2
-
-        elif type_of == 0x5:
-            # ske vx, vy
-            if self.chip_state.v[code[0] & 0xf] == self.chip_state.v[code[1] >> 4]:
-                self.chip_state.pc += 2
-
-        elif type_of == 0x6:
-            # load vx, nn
-            self.chip_state.v[code[0] & 0xf] = code[1]
-
-        elif type_of == 0x7:
-            # add vx, nn
-            self.chip_state.v[code[0] & 0xf] += code[1]
-            self.chip_state.v[code[0] & 0xf] %= 256
-
-        elif type_of == 0x8:
-            last_nibble = code[1] & 0xf
-            if last_nibble == 0x0:
-                # load vx, vy
-                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4]
-
-            elif last_nibble == 0x1:
-                # or vx, vy
-                self.chip_state.v[code[0] & 0xf] |= self.chip_state.v[code[1] >> 4] 
-            
-            elif last_nibble == 0x2:
-                # and vx, vy
-                self.chip_state.v[code[0] & 0xf] &= self.chip_state.v[code[1] >> 4]
-
-            elif last_nibble == 0x3:
-                # xor vx, vy
-                self.chip_state.v[code[0] & 0xf] ^= self.chip_state.v[code[1] >> 4]
-
-            elif last_nibble == 0x4:
-                # add vx, vy
-                self.chip_state.v[code[0] & 0xf] += self.chip_state.v[code[1] >> 4]
-                if self.chip_state.v[code[0] & 0xf] > 255:
-                    self.chip_state.v[0xf] = 0x1
-                    self.chip_state.v[code[0] & 0xf] %= 256
-                else:
-                    self.chip_state.v[0xf] = 0x0
-                
-            elif last_nibble == 0x5:
-                # sub vx, vy - vx -= vy
-                # ipdb.set_trace()
-                self.chip_state.v[code[0] & 0xf] -= self.chip_state.v[code[1] >> 4]
-                if self.chip_state.v[code[0] & 0xf] < 0:
-                    self.chip_state.v[0xf] = 0x0
-                    self.chip_state.v[code[0] & 0xf] += 256
-                else:
-                    self.chip_state.v[0xf] = 0x1
-
-            elif last_nibble == 0x6:
-                # shr vx, vy
-                # bit = self.chip_state.v[code[1] >> 4] & 0x1
-                # self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4] >> 1
-                # self.chip_state.v[0xf] = bit
-                bit = self.chip_state.v[code[0] & 0xf] & 0x1
-                self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[0] & 0xf] >> 1
-                self.chip_state.v[0xf] = bit
-
-            elif last_nibble == 0x7:
-                # subn vx, vy - vx = vy - vx
-                result = self.chip_state.v[code[1] >> 4] - self.chip_state.v[code[0] & 0xf]
-                if result < 0:
-                    self.chip_state.v[0xf] = 0x0
-                    self.chip_state.v[code[0] & 0xf] = 256 + result 
-                else:
-                    self.chip_state.v[code[0] & 0xf] = result
-                    self.chip_state.v[0xf] = 0x1
-
-            elif last_nibble == 0xE:
-                # shl vx, vy
-                # self.chip_state.v[0xf] = self.chip_state.v[code[1] >> 4] >> 7
-                # self.chip_state.v[code[0] & 0xf] = self.chip_state.v[code[1] >> 4] << 1
-                self.chip_state.v[0xf] = self.chip_state.v[code[0] & 0xf] >> 7
-                self.chip_state.v[code[0] & 0xf] = 0 
-
-        elif type_of == 0x9:
-            # skne vx, vy
-            if self.chip_state.v[code[0] & 0xf] != self.chip_state.v[code[1] >> 4]:
-                self.chip_state.pc += 2
-
-        elif type_of == 0xA:
-            # load i, nnn
-            addr = ((code[0] << 8) | code[1]) & 0x0fff
-            self.chip_state.i = addr
-
-        elif type_of == 0xB:
-            # jmp [i] + nnn
-            addr = (((code[0] & 0xf) << 8) | code[1]) + self.chip_state.i
-            self.chip_state.pc = addr
-
-        elif type_of == 0xC:
-            # rand vx, nn
-            mask = code[1]
-            random_num = random.randint(0, 255) & mask
-            self.chip_state.v[code[0] & 0xf] = random_num
-
-        elif type_of == 0xD:
-            # drw vx, vy, n
-            vx, vy = self.chip_state.v[code[0] &  0xf], self.chip_state.v[code[1] >> 4]
-            n = code[1] & 0xf
-            unset = False
-            for y in range(n):
-                sprite_byte =self.chip_state.memory[
-                    self.chip_state.i + y
-                ]
-                # doubt
-                for x in range(8):
-                    # addr = ((vy+y) * 64) + vx + x
-                    if (vy+y) >= 32 or (vx + x) >= 64:
-                        # out of screen
-                        continue
-                    new_byte = (sprite_byte & (1<<(8-x-1))) >> (8-x-1)
-                    old_byte = self.display[vy+y][vx+x]
-                    if old_byte and not (old_byte ^ new_byte):
-                        unset = True
-                    self.display[vy+y][vx+x] = new_byte ^ old_byte
-            self.chip_state.v[0xf] = 1 if unset else 0
-
-        elif type_of == 0xE:
-            # skips related to key pressed
-            if code[1] == 0x9E:
-                if pressed_keys[self.chip_state.v[KEYS_REVERSED[code[0] & 0xf]]]:
-                    self.chip_state.pc += 2
-            elif code[1] == 0xA1:
-                if not pressed_keys[self.chip_state.v[KEYS_REVERSED[code[0] & 0xf]]]:
-                    self.chip_state.pc += 2
-
-        elif type_of == 0xF:
-            if code[1] == 0x07:
-                self.chip_state.v[code[0] & 0xf] = self.chip_state.delay
-            elif code[1] == 0x0A:
-                key = wait()
-                self.chip_state.v[code[0] & 0xf] = KEYS[key]
-            elif code[1] == 0x15:
-                self.chip_state.delay = self.chip_state.v[code[0] & 0xf]
-            elif code[1] == 0x18:
-                self.chip_state.sound = self.chip_state.v[code[0] & 0xf]
-            elif code[1] == 0x1E:
-                self.chip_state.i += self.chip_state.v[code[0] & 0xf]
-            elif code[1] == 0x29:
-                addr = 5 * self.chip_state.v[code[0] & 0xf]
-                self.chip_state.i = addr
-            elif code[1] == 0x33:
-                # bcd vx
-                number = self.chip_state.v[code[0] &  0xf]
-                bcd = f"{number:03d}"
-                i = self.chip_state.i
-                self.chip_state.memory[i] = int(bcd[0])
-                self.chip_state.memory[i+1] = int(bcd[1])
-                self.chip_state.memory[i+2] = int(bcd[2])
-            elif code[1] == 0x55:
-                # ld [i], vx
-                for index in range((code[0] & 0xf) + 1):
-                    self.chip_state.memory[self.chip_state.i + index] = self.chip_state.v[index]
-                # self.chip_state.i += (code[0] & 0xf) + 1
-            elif code[1] == 0x65:
-                # load vx, [i]
-                for index in range((code[0] & 0xf) + 1):
-                    self.chip_state.v[index] = self.chip_state.memory[self.chip_state.i + index]
-                # self.chip_state.i += (code[0] & 0xf) + 1
-
-    def fetch_next_opcode(self, pressed_keys):
-        code = code_first, _ = (
-            self.chip_state.memory[self.chip_state.pc],
-            self.chip_state.memory[self.chip_state.pc + 1],
-        )
-        self.chip_state.pc += 2
-        # extract first nibble from code
-        first_nibble = code_first >> 4
-        print(f"{self.chip_state.pc:04x} {code[0]:02x} {code[1]:02x}")
-        print(f"State: pc: {self.chip_state.pc} i: {self.chip_state.i} v: {self.chip_state.v}")
-        self.opcode_switch(first_nibble, code, pressed_keys)
-        # reduce timers if set
-        if self.chip_state.delay > 0: self.chip_state.delay -= 1
-        if self.chip_state.sound > 0: self.chip_state.sound -= 1
-    
     def get_memory(self):
-        return self.chip_state.memory
+        return self.state["memory"]
 
     def get_display(self):
-        return self.display
+        return self.state["display"]
 
+    def fetch_next_opcode(self, pressed_keys):
+        opcode =  self.state["memory"][self.state["pc"]] << 0x8 | self.state["memory"][self.state["pc"] + 1]
+        self.state["pc"] += 2
+        print(f"{self.state['pc']:04x} {opcode >> 0x8:02x} {opcode & 0xff:02x}")
+        print(f"State: pc: {self.state['pc']} i: {self.state['i']} v: {self.state['v']}")
+        self.opcode_switch(opcode, pressed_keys)
+        # reduce timers if set
+        if self.state["delay"] > 0: self.state["delay"] -= 1
+        if self.state["sound"] > 0: self.state["delay"] -= 1
 
-def graphic_grid(size: Tuple[int], modifier: int) -> List[Tuple[int]]:
-    grid = []
-    for j in range(32):
-        grid.append([])
-        for i in range(64):
-            grid[j].append((i * modifier, j * modifier, modifier, modifier))
-    return grid
+    def opcode_switch(self, opcode, pressed_keys):
+        self.opcode = opcode
+        self.pressed_keys = pressed_keys
+        first_nibble = (opcode & 0xf000) >> 0xc
+        print(f"First nibble: {first_nibble}")
+        if first_nibble == 0xf:
+            function = self.opcode_map.get(opcode & 0x00ff)
+        elif first_nibble in [0x0, 0x8, 0xE]:
+            function = self.opcode_map.get(opcode & 0x000f)
+        else:
+            function = self.opcode_map.get(first_nibble)
+        if function:
+            pass
+        else:
+            print(f"{self.opcode} not implemented.")
 
+    def _00E0(self):
+        """ Clear the Screen
+        """
+        for y in range(32):
+            for x in range(64):
+                self.state['display'][y][x] = 0
+    
+    def _00EE(self):
+        pass
+    
+    def _1NNN(self):
+        pass
 
-def main(chip_program: str):
-    with open(chip_program, "rb") as chip_file:
-        grid_rect = graphic_grid(SIZE, MODIFIER)
+    def _2NNN(self):
+        pass
 
-        # initialize screen
-        pygame.init()
-        screen = pygame.display.set_mode((WIDTH * MODIFIER, HEIGHT * MODIFIER))
-        pygame.display.set_caption("Chip8 Interpreter")
-        pygame.mouse.set_visible(0)
-        background = pygame.Surface(screen.get_size())
-        background = background.convert()
-        clock = pygame.time.Clock()
-        font = pygame.font.SysFont("monospace", 24)
+    def _3XNN(self):
+        pass
 
-        # Title screen
-        active_scene = scenes.TitleScene()
-        active_scene.render(screen, background, font, clock)
+    def _4XNN(self):
+        pass
 
-        # startup chip8
-        chip8 = Chip8(chip_file)
+    def _5XY0(self):
+        pass
 
-        # Change to boot screen
-        active_scene.switch_scene(scenes.BootScene(pygame.time.get_ticks(), chip8))
-        active_scene = active_scene.next
+    def _6XNN(self):
+        """ Store number NN in register VX
+        """
+        x = (self.opcode & 0x0f00) >> 0x8
+        self.state["v"][x] = self.opcode & 0x00ff
 
-        # Event loop
-        while active_scene != None:
-            pressed_keys = pygame.key.get_pressed()
-            filtered_events = []
-            for event in pygame.event.get():
-                quit_attempt = False
-                if event.type == pygame.QUIT:
-                    quit_attempt = True
-                if quit_attempt:
-                    active_scene.terminate()
-                else:
-                    filtered_events.append(event)
+    def _7XNN(self):
+        """Add the value NN to register VX
+        """
+        x = (self.opcode & 0x0f00) >> 0x8
+        self.state["v"][x] += (self.opcode & 0x00ff)
+        self.state["v"][x] %= 256
 
-            active_scene.process_input(filtered_events, pressed_keys)
-            active_scene.update()
-            active_scene.render(background, grid_rect, font, clock)
-            active_scene = active_scene.next
+    def _8XY0(self):
+        """Store the value of register VY in register VX
+        """
+        x = (self.opcode & 0x0f00) >> 0x8
+        y = (self.opcode & 0x00f0) >> 0x4
+        self.state["v"][x] = self.state["v"][y]
 
-            screen.blit(background, (0, 0))
-            pygame.display.flip()
-            clock.tick(60)
+    def _8XY1(self):
+        pass
 
+    def _8XY2(self):
+        pass
 
-if __name__ == "__main__":
-    from sys import argv
+    def _8XY3(self):
+        pass
 
-    if len(argv) == 2:
-        main(argv[1])
-    else:
-        print("Please supply chip 8 program.")
+    def _8XY4(self):
+        """
+        """
+
+    def _8XY5(self):
+        pass
+
+    def _8XY6(self):
+        pass
+
+    def _8XY7(self):
+        pass
+
+    def _8XYE(self):
+        pass
+
+    def _9XY0(self):
+        pass
+
+    def _ANNN(self):
+        pass
+
+    def _BNNN(self):
+        pass
+
+    def _CXNN(self):
+        pass
+
+    def _DXYN(self):
+        pass
+
+    def _EX9E(self):
+        pass
+
+    def _EXA1(self):
+        pass
+
+    def _FX07(self):
+        pass
+
+    def _FX0A(self):
+        pass
+
+    def _FX15(self):
+        pass
+
+    def _FX18(self):
+        pass
+
+    def _FX1E(self):
+        pass
+
+    def _FX29(self):
+        pass
+
+    def _FX33(self):
+        pass
+
+    def _FX55(self):
+        pass
+
+    def _FX65(self):
+        pass
