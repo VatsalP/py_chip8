@@ -1,6 +1,7 @@
 import random
 
-import pygame
+import numpy
+import pygame, pygame.sndarray
 from pygame.locals import *
 
 
@@ -57,6 +58,8 @@ class Chip8:
         and uppermost 256 bytes (0xF00 - 0xFFF) were for display
         256*8 == 64*32 == 2048 bits
         """
+        self.sound_array = numpy.array([4096 * numpy.sin(2.0 * numpy.pi * 440 * x / 44100) for x in range(0, 44100)]).astype(numpy.int16)
+        self.sound = pygame.sndarray.make_sound(self.sound_array)
         self.chip_file = chip_file.read()
         self.state = {
             "v": [0 for _ in range(16)],
@@ -125,23 +128,28 @@ class Chip8:
 
     def get_display(self):
         return self.state["display"]
-
+    
     def fetch_next_opcode(self, pressed_keys):
+        """Fetch and execute opcode
+        """
         opcode = (
             self.state["memory"][self.state["pc"]] << 0x8
             | self.state["memory"][self.state["pc"] + 1]
         )
         self.state["pc"] += 2
-        print(f"{self.state['pc']:04x} {opcode >> 0x8:02x} {opcode & 0xff:02x}")
-        print(
-            f"State: pc: {self.state['pc']} i: {self.state['i']} v: {self.state['v']}"
-        )
+        # debug prints
+        # print(f"{self.state['pc']:04x} {opcode >> 0x8:02x} {opcode & 0xff:02x}")
+        # print(
+        #     f"State: pc: {self.state['pc']} i: {self.state['i']} v: {self.state['v']}"
+        # )
         self.opcode_switch(opcode, pressed_keys)
         # reduce timers if set
         if self.state["delay"] > 0:
             self.state["delay"] -= 1
         if self.state["sound"] > 0:
             self.state["delay"] -= 1
+            if self.state["sound"] == 0:
+                self.sound.play()
 
     def opcode_switch(self, opcode, pressed_keys):
         self.opcode = opcode
@@ -412,11 +420,12 @@ class Chip8:
     def _FX0A(self):
         """Wait for a keypress and store the result in register VX
         """
-        if not any(self.pressed_keys for key in self.keys.keys()):
+        if any(self.pressed_keys[key] for key in self.keys.keys()):
             x = (self.opcode & 0x0F00) >> 0x8
             for i in range(0x10):
                 if self.pressed_keys[self.keys_rev[i]]:
                     self.state["v"][x] = i
+        else:
             self.state["pc"] -= 2
 
     def _FX15(self):

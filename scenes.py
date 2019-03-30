@@ -29,40 +29,11 @@ class SceneBase:
         self.switch_scene(None)
 
 
-class TitleScene(SceneBase):
-    def __init__(self):
-        SceneBase.__init__(self)
-
-    def render(
-        self,
-        screen,
-        background,
-        font,
-        clock
-    ):
-        background.fill(main.BLACK)
-        text = font.render("Chip 8 Interpreter by vatsalp", 1, main.WHITE)
-        textpos = text.get_rect(
-            centery=background.get_height() / 2, centerx=background.get_width() / 2
-        )
-        background.blit(text, textpos)
-        screen.blit(background, (0, 0))
-        pygame.display.flip()
-        current_time = pygame.time.get_ticks()
-        exit_time = current_time + 0.1 * 10 ** 3
-        boot_screen = True
-        while boot_screen:
-            current_time = pygame.time.get_ticks()
-            if current_time >= exit_time:
-                boot_screen = False
-            clock.tick(5)
-
-
 class BootScene(SceneBase):
     def __init__(self, time, chip8):
         SceneBase.__init__(self)
         # we do this scene for 2 secs
-        self.exit_time = time + 0.1 * 10 ** 3
+        self.exit_time = time + 0.5 * 10 ** 3
         self.chip8 = chip8
 
     def render(self, background, grid_rect, *args):
@@ -70,7 +41,7 @@ class BootScene(SceneBase):
         for y in range(32):
             for x in range(64):
                 color = randint(0, 10), randint(0, 10), randint(0, 102)
-                pygame.draw.rect(background, color, grid_rect[y][x], 0)
+                pygame.draw.rect(background, color, grid_rect[y][x][0], 0)
         text = args[0].render("Loading...", 1, main.WHITE)
         textpos = text.get_rect(
             centery=background.get_height() / 2, centerx=background.get_width() / 2
@@ -92,9 +63,14 @@ class Chip8Scene(SceneBase):
 
     def render(self, background, grid_rect, *args):
         display = self.chip8.get_display()
+        update = []
         for y in range(32):
             for x in range(64):
-                if display[y][x]:
-                    pygame.draw.rect(background, main.WHITE, grid_rect[y][x], 0)
-                else:
-                    pygame.draw.rect(background, main.BLACK, grid_rect[y][x], 0)
+                if display[y][x] ^ grid_rect[y][x][1]:
+                    update.append(grid_rect[y][x][0])
+                    if display[y][x]:
+                        pygame.draw.rect(background, main.WHITE, grid_rect[y][x][0], 0)
+                    else:
+                        pygame.draw.rect(background, main.BLACK, grid_rect[y][x][0], 0)
+                    grid_rect[y][x][1] = display[y][x]
+        return update
