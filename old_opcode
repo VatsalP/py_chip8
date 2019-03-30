@@ -221,3 +221,19 @@
 
 
     
+"""
+def wait():
+    """ Waiting for User to press key
+    """
+    while True:
+        pressed_keys = pygame.key.get_pressed()
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                import sys; sys.exit()
+            if event.type == pygame.KEYDOWN and \
+                any(
+                    True if pressed_keys[x] else False for x in filter(lambda i: i in KEYS, pressed_keys)
+                ):
+                return next(filter(lambda i: i in KEYS and pressed_keys[i], pressed_keys))
+"""

@@ -11,7 +11,7 @@ from chip8 import Chip8
 
 # constants
 SIZE = WIDTH, HEIGHT = 64, 32
-MODIFIER = 10
+MODIFIER = 20
 BLACK = 0, 0, 0
 WHITE = 0xFF, 0xFF, 0xFF
 
