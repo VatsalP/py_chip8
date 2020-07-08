@@ -63,11 +63,10 @@ def main(chip_program):
 
             active_scene.process_input(filtered_events, pressed_keys)
             active_scene.update()
-            rect = active_scene.render(screen, grid_rect, font, clock)
+            active_scene.render(screen, grid_rect, font, clock)
             active_scene = active_scene.next
 
-            if rect: pygame.display.update(rect)
-            else: pygame.display.update()
+            pygame.display.update()
             clock.tick(60)
 
 

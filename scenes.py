@@ -59,18 +59,16 @@ class Chip8Scene(SceneBase):
         self.chip8 = chip8
 
     def update(self):
-        self.chip8.fetch_next_opcode(self.pressed_keys)
+        for _ in range(12):
+            self.chip8.fetch_next_opcode(self.pressed_keys)
 
     def render(self, background, grid_rect, *args):
         display = self.chip8.get_display()
-        update = []
         for y in range(32):
             for x in range(64):
                 if display[y][x] ^ grid_rect[y][x][1]:
-                    update.append(grid_rect[y][x][0])
                     if display[y][x]:
                         pygame.draw.rect(background, main.WHITE, grid_rect[y][x][0], 0)
                     else:
                         pygame.draw.rect(background, main.BLACK, grid_rect[y][x][0], 0)
                     grid_rect[y][x][1] = display[y][x]
-        return update
